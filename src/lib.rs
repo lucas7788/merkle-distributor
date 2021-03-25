@@ -19,6 +19,7 @@ const KEY_TOKEN: &[u8] = b"2";
 const KEY_MERKLE_ROOT: &[u8] = b"3";
 const KEY_CLAIMED_BIT: &[u8] = b"4";
 const KEY_ADMIN: &[u8] = b"5";
+const KEY_PENDING_ADMIN: &[u8] = b"6";
 
 pub fn init(token: &Address, merkle_root: &H256, admin: &Address) -> bool {
     let has_init: bool = get(KEY_INIT).unwrap_or_default();
@@ -38,6 +39,9 @@ pub fn init(token: &Address, merkle_root: &H256, admin: &Address) -> bool {
 
 fn get_admin() -> Address {
     get(KEY_ADMIN).unwrap()
+}
+fn get_pending_admin() -> Address {
+    get(KEY_PENDING_ADMIN).unwrap_or_default()
 }
 
 pub fn is_claimed(index: U128) -> bool {
@@ -101,8 +105,18 @@ fn invoke() {
             let new_addr = contract_migrate(code, vm_type, name, version, author, email, desc);
             sink.write(new_addr);
         }
+        b"_setPendingAdmin" => {
+            let new_pending_admin = source.read().unwrap();
+            sink.write(_set_pending_admin(new_pending_admin));
+        }
+        b"_acceptAdmin" => {
+            sink.write(_accept_admin());
+        }
         b"getAdmin" => {
             sink.write(get_admin());
+        }
+        b"getPendingAdmin" => {
+            sink.write(get_pending_admin());
         }
         b"getToken" => {
             sink.write(get_token_address());
@@ -128,6 +142,48 @@ fn invoke() {
         }
     }
     runtime::ret(b"success");
+}
+
+pub fn _set_pending_admin(pending_admin: &Address) -> bool {
+    // Check caller = admin
+    if !runtime::check_witness(&get_admin()) {
+        return failure("_set_pending_admin", "check witness failed");
+    }
+    assert!(!pending_admin.is_zero(), "pending admin is zero");
+
+    // Save current value, if any, for inclusion in log
+    let old_pending_admin = get_pending_admin();
+
+    // Store pendingAdmin with value new_pending_admin
+    put(KEY_PENDING_ADMIN, pending_admin);
+
+    // Emit new_pending_admin(old_pending_admin, new_pending_admin)
+    new_pending_admin(&old_pending_admin, pending_admin);
+    true
+}
+
+pub fn _accept_admin() -> bool {
+    let pending_admin = &get_pending_admin();
+    // Check caller is pending_admin and pending_admin ≠ address(0)
+    if pending_admin.is_zero() || !runtime::check_witness(pending_admin) {
+        return failure(
+            "_accept_admin",
+            "check witness failed or pending admin is zero",
+        );
+    }
+
+    // Save current values for inclusion in log
+    let old_admin = get_admin();
+
+    // Store admin with value pending_admin
+    put(KEY_ADMIN, pending_admin);
+    // Clear the pending value
+    let pending_admin = &Address::new([0u8; 20]);
+    put(KEY_PENDING_ADMIN, pending_admin);
+
+    new_admin(&old_admin, pending_admin);
+    new_pending_admin(pending_admin, pending_admin);
+    true
 }
 
 fn set_claimed_inner(index: U128) {
@@ -183,6 +239,22 @@ fn claim_event(index: U128, account: &Address, amount: U128) {
         .number(index)
         .address(account)
         .number(amount)
+        .notify();
+}
+
+fn new_pending_admin(old_pending_admin: &Address, new_pending_admin: &Address) {
+    EventBuilder::new()
+        .string("NewPendingAdmin")
+        .address(old_pending_admin)
+        .address(new_pending_admin)
+        .notify();
+}
+
+fn new_admin(old_admin: &Address, new_admin: &Address) {
+    EventBuilder::new()
+        .string("NewAdmin")
+        .address(old_admin)
+        .address(new_admin)
         .notify();
 }
 
