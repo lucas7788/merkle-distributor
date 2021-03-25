@@ -136,7 +136,7 @@ fn invoke() {
             panic!("not support method:{}", method)
         }
     }
-    runtime::ret(b"success");
+    runtime::ret(sink.bytes());
 }
 
 pub fn _set_pending_admin(pending_admin: &Address) -> bool {

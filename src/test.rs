@@ -1,5 +1,5 @@
-use crate::{claim, get_merkle_root, get_token_address, init, is_claimed};
-use crate::{Address, H256, U128};
+use crate::{claim, concat3, get_merkle_root, get_token_address, init, is_claimed};
+use crate::{sha256, Address, H256, U128};
 use ostd::mock::build_runtime;
 
 #[test]
@@ -15,12 +15,40 @@ fn test() {
     assert_eq!(&get_token_address(), &token);
     assert_eq!(&get_merkle_root(), &merkle_root);
 
-    let index = U128::new(1);
-    assert!(!is_claimed(index));
+    let amount = U128::new(100);
 
-    let account = Address::repeat_byte(4);
-    let amount = U128::new(2);
-    let merkle_proof = [H256::repeat_byte(1)];
+    let mut users = (1..100)
+        .into_iter()
+        .map(|i| {
+            let index = U128::new(i);
+            assert!(!is_claimed(index));
+            let a = i + 3;
+            let account = Address::repeat_byte(a as u8);
+            let proof = sha256(concat3(index, account, amount));
+            TestS::new(U128::new(i), account, amount, proof)
+        })
+        .collect::<Vec<TestS>>();
+
+    let merkle_proof = sha256(concat3(index, account, amount));
+
     assert!(claim(index, &account, amount, merkle_proof.as_ref()));
     assert!(is_claimed(index));
+}
+
+struct TestS {
+    index: U128,
+    account: Address,
+    amount: U128,
+    proof: H256,
+}
+
+impl TestS {
+    fn new(index: U128, account: Address, amount: U128, proof: H256) -> Self {
+        TestS {
+            index,
+            account,
+            amount,
+            proof,
+        }
+    }
 }
