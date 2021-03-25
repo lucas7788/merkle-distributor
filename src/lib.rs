@@ -11,15 +11,16 @@ use ostd::contract::{ong, ont};
 use ostd::database::{get, put};
 use ostd::prelude::{str, Vec, U128};
 use ostd::runtime;
-use ostd::runtime::{address, contract_delete, input, sha256};
+use ostd::runtime::{address, check_witness, contract_delete, contract_migrate, input, sha256};
 use ostd::types::{Address, H256};
 
 const KEY_INIT: &[u8] = b"1";
 const KEY_TOKEN: &[u8] = b"2";
 const KEY_MERKLE_ROOT: &[u8] = b"3";
 const KEY_CLAIMED_BIT: &[u8] = b"4";
+const KEY_ADMIN: &[u8] = b"5";
 
-pub fn init(token: &Address, merkle_root: &H256) -> bool {
+pub fn init(token: &Address, merkle_root: &H256, admin: &Address) -> bool {
     let has_init: bool = get(KEY_INIT).unwrap_or_default();
     if has_init {
         failure("init", "only can init once");
@@ -30,16 +31,21 @@ pub fn init(token: &Address, merkle_root: &H256) -> bool {
         put(KEY_INIT, true);
         put(KEY_TOKEN, token);
         put(KEY_MERKLE_ROOT, merkle_root);
+        put(KEY_ADMIN, admin);
         true
     }
 }
 
+fn get_admin() -> Address {
+    get(KEY_ADMIN).unwrap()
+}
+
 pub fn is_claimed(index: U128) -> bool {
-    let u256_ = U128::new(256);
-    let claimed_word_index = index / u256_;
-    let claimed_bit_index = index.raw() % 256;
+    let u128_ = U128::new(128);
+    let claimed_word_index = index / u128_;
+    let claimed_bit_index = index.raw() % 128;
     let claimed_word = get_claimed_word(claimed_word_index);
-    let mask = claimed_bit_index * 2;
+    let mask = 2u128.pow(claimed_bit_index as u32);
     return claimed_word.raw() & mask == mask;
 }
 
@@ -84,8 +90,19 @@ fn invoke() {
     let mut sink = Sink::new(32);
     match action {
         b"init" => {
-            let (token, merkle_root) = source.read().unwrap();
-            sink.write(init(token, merkle_root));
+            let (token, merkle_root, admin) = source.read().unwrap();
+            sink.write(init(token, merkle_root, admin));
+        }
+        b"migrate" => {
+            let (code, vm_type, name, version, author, email, desc) = source.read().unwrap();
+            let vm_type: U128 = vm_type;
+            let vm_type = vm_type.raw() as u32;
+            assert!(check_witness(&get_admin()), "check witness failed");
+            let new_addr = contract_migrate(code, vm_type, name, version, author, email, desc);
+            sink.write(new_addr);
+        }
+        b"getAdmin" => {
+            sink.write(get_admin());
         }
         b"getToken" => {
             sink.write(get_token_address());
@@ -114,10 +131,11 @@ fn invoke() {
 }
 
 fn set_claimed_inner(index: U128) {
-    let claimed_word_index = index / 256;
-    let claimed_bit_index = index.raw() % 256;
+    let u128_ = U128::new(128);
+    let claimed_word_index = index / u128_;
+    let claimed_bit_index = index.raw() % 128;
     let old = get_claimed_word(claimed_word_index);
-    let claimed_bit_index = claimed_bit_index * 2;
+    let claimed_bit_index = 2u128.pow(claimed_bit_index as u32);
     put_claimed_word(claimed_word_index, U128::new(old.raw() | claimed_bit_index));
 }
 
@@ -143,7 +161,7 @@ fn concat<K: Encoder, T: Encoder>(prefix: K, post: T) -> Vec<u8> {
     sink.bytes().to_vec()
 }
 fn concat3<K: Encoder, T: Encoder, V: Encoder>(prefix: K, post: T, post2: V) -> Vec<u8> {
-    let mut sink = Sink::new(20);
+    let mut sink = Sink::new(32);
     sink.write(prefix);
     sink.write(post);
     sink.write(post2);
