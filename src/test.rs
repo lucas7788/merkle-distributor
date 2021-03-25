@@ -1,6 +1,7 @@
-use crate::{claim, concat, concat3, get_merkle_root, get_token_address, init, is_claimed};
+use crate::{claim, concat, concat3, get_merkle_root, get_token_address, init, is_claimed, _set_pending_admin, _accept_admin};
 use crate::{sha256, Address, H256, U128};
 use ostd::mock::build_runtime;
+
 
 #[test]
 fn test() {
@@ -47,6 +48,11 @@ fn test() {
 
     assert_eq!(&get_token_address(), &token);
     assert_eq!(&get_merkle_root(), merkle_root);
+
+    let new_admin = Address::repeat_byte(255);
+    assert!(_set_pending_admin(&new_admin));
+    mock.witness(&[new_admin]);
+    assert!(_accept_admin());
 
     for i in 0..user_num {
         let user:&TestS = users.get(i as usize).unwrap();
