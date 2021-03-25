@@ -27,6 +27,7 @@ pub fn init(token: &Address, merkle_root: &H256, admin: &Address) -> bool {
         failure("init", "only can init once");
         return false;
     } else {
+        assert!(check_witness(admin), "check witness failed");
         assert!(!token.is_zero(), "token address is zero");
         assert!(!merkle_root.is_zero(), "merkle_root is zero");
         put(KEY_INIT, true);
