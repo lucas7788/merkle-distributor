@@ -5,8 +5,8 @@ use ostd::mock::build_runtime;
 #[test]
 fn test() {
     let amount = U128::new(100);
-
-    let users = (1..8)
+    let user_num = 9;
+    let users:Vec<TestS> = (0..user_num)
         .into_iter()
         .map(|i| {
             let index = U128::new(i);
@@ -30,7 +30,10 @@ fn test() {
     let mut all_layer: Vec<Vec<H256>> = vec![];
     all_layer.push(proof1);
     for i in (0..layer_num - 1) {
-        temp = compute_proof(temp.as_slice());
+        temp = compute_proof(temp);
+        if temp.len() % 2 == 1 && i != layer_num-1-1{
+            temp.push(H256::repeat_byte(0));
+        }
         all_layer.push(temp.clone());
     }
 
@@ -45,18 +48,32 @@ fn test() {
     assert_eq!(&get_token_address(), &token);
     assert_eq!(&get_merkle_root(), merkle_root);
 
-    let user = users.get(0).unwrap();
-    let mut merkle_proof: Vec<H256> = vec![];
-    merkle_proof.push(all_layer.get(0).unwrap().get(1).unwrap().clone());
-    merkle_proof.push(all_layer.get(1).unwrap().get(1).unwrap().clone());
-    merkle_proof.push(all_layer.get(2).unwrap().get(1).unwrap().clone());
-    assert!(claim(
-        user.index,
-        &user.account,
-        user.amount,
-        merkle_proof.as_ref()
-    ));
-    assert!(is_claimed(user.index));
+    for i in 0..user_num {
+        let user:&TestS = users.get(i as usize).unwrap();
+        let mut merkle_proof: Vec<H256> = vec![];
+        let mut i_temp = i;
+        let mut index = if i_temp % 2 == 1 {
+            i_temp-1
+        } else {
+            i_temp+1
+        };
+        for j in 0..layer_num-1 {
+            merkle_proof.push(all_layer.get(j as usize).unwrap().get(index as usize).unwrap().clone());
+            i_temp = i_temp / 2;
+            index = if i_temp % 2 == 1 {
+                i_temp - 1
+            } else {
+                i_temp + 1
+            };
+        }
+        assert!(claim(
+            user.index,
+            &user.account,
+            user.amount,
+            merkle_proof.as_ref()
+        ));
+        assert!(is_claimed(user.index));
+    }
 }
 
 fn get_layer_num(num: u32) -> u32 {
@@ -66,7 +83,7 @@ fn get_layer_num(num: u32) -> u32 {
     r.unwrap_or_default() + 1
 }
 
-fn compute_proof(proof1: &[H256]) -> Vec<H256> {
+fn compute_proof(mut proof1: Vec<H256>) -> Vec<H256> {
     let mut left = H256::new([0; 32]);
     let mut right = H256::new([0; 32]);
     let mut i = 0;
