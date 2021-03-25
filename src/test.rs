@@ -1,12 +1,16 @@
 use crate::{claim, get_merkle_root, get_token_address, init, is_claimed};
 use crate::{Address, H256, U128};
+use ostd::mock::build_runtime;
 
 #[test]
 fn test() {
     let token = Address::repeat_byte(1);
     let merkle_root = H256::repeat_byte(2);
-    assert!(init(&token, &merkle_root));
-    assert!(!init(&token, &merkle_root));
+    let admin = Address::repeat_byte(3);
+    let mut mock = build_runtime();
+    mock.witness(&[admin]);
+    assert!(init(&token, &merkle_root, &admin));
+    assert!(!init(&token, &merkle_root, &admin));
 
     assert_eq!(&get_token_address(), &token);
     assert_eq!(&get_merkle_root(), &merkle_root);

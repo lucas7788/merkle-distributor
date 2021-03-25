@@ -24,7 +24,7 @@ const KEY_PENDING_ADMIN: &[u8] = b"6";
 pub fn init(token: &Address, merkle_root: &H256, admin: &Address) -> bool {
     let has_init: bool = get(KEY_INIT).unwrap_or_default();
     if has_init {
-        failure("init", "only can init once");
+        failure("only can init once");
         return false;
     } else {
         assert!(check_witness(admin), "check witness failed");
@@ -56,17 +56,11 @@ pub fn is_claimed(index: U128) -> bool {
 
 pub fn claim(index: U128, account: &Address, amount: U128, merkle_proof: &[H256]) -> bool {
     if is_claimed(index) {
-        return failure(
-            "claim, is_claimed",
-            "MerkleDistributor: Drop already claimed.",
-        );
+        return failure("MerkleDistributor: Drop already claimed.");
     }
     let node = sha256(concat3(index, account, amount));
     if !verify_merkle_proof(merkle_proof, &get_merkle_root(), &node) {
-        return failure(
-            "claim,verify_merkle_proof",
-            "MerkleDistributor: Invalid proof.",
-        );
+        return failure("MerkleDistributor: Invalid proof.");
     }
     set_claimed_inner(index);
     let res = transfer_neovm(&get_token_address(), &address(), account, amount);
@@ -148,7 +142,7 @@ fn invoke() {
 pub fn _set_pending_admin(pending_admin: &Address) -> bool {
     // Check caller = admin
     if !runtime::check_witness(&get_admin()) {
-        return failure("_set_pending_admin", "check witness failed");
+        return failure("check witness failed");
     }
     assert!(!pending_admin.is_zero(), "pending admin is zero");
 
@@ -167,10 +161,7 @@ pub fn _accept_admin() -> bool {
     let pending_admin = &get_pending_admin();
     // Check caller is pending_admin and pending_admin ≠ address(0)
     if pending_admin.is_zero() || !runtime::check_witness(pending_admin) {
-        return failure(
-            "_accept_admin",
-            "check witness failed or pending admin is zero",
-        );
+        return failure("check witness failed or pending admin is zero");
     }
 
     // Save current values for inclusion in log
@@ -225,10 +216,9 @@ fn concat3<K: Encoder, T: Encoder, V: Encoder>(prefix: K, post: T, post2: V) -> 
     sink.bytes().to_vec()
 }
 
-fn failure(method: &str, detail: &str) -> bool {
+fn failure(detail: &str) -> bool {
     EventBuilder::new()
         .string("Failure")
-        .string(method)
         .string(detail)
         .notify();
     false
