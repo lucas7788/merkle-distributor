@@ -1,23 +1,12 @@
-use crate::{claim, concat3, get_merkle_root, get_token_address, init, is_claimed};
+use crate::{claim, concat, concat3, get_merkle_root, get_token_address, init, is_claimed};
 use crate::{sha256, Address, H256, U128};
 use ostd::mock::build_runtime;
 
 #[test]
 fn test() {
-    let token = Address::repeat_byte(1);
-    let merkle_root = H256::repeat_byte(2);
-    let admin = Address::repeat_byte(3);
-    let mut mock = build_runtime();
-    mock.witness(&[admin]);
-    assert!(init(&token, &merkle_root, &admin));
-    assert!(!init(&token, &merkle_root, &admin));
-
-    assert_eq!(&get_token_address(), &token);
-    assert_eq!(&get_merkle_root(), &merkle_root);
-
     let amount = U128::new(100);
 
-    let mut users = (1..100)
+    let users = (1..8)
         .into_iter()
         .map(|i| {
             let index = U128::new(i);
@@ -29,10 +18,74 @@ fn test() {
         })
         .collect::<Vec<TestS>>();
 
-    let merkle_proof = sha256(concat3(index, account, amount));
+    let mut proof1 = users
+        .iter()
+        .map(|item| item.proof.clone())
+        .collect::<Vec<H256>>();
+    if proof1.len() % 2 == 1 {
+        proof1.push(H256::repeat_byte(0));
+    }
+    let layer_num = get_layer_num(proof1.len() as u32);
+    let mut temp = proof1.clone();
+    let mut all_layer: Vec<Vec<H256>> = vec![];
+    all_layer.push(proof1);
+    for i in (0..layer_num - 1) {
+        temp = compute_proof(temp.as_slice());
+        all_layer.push(temp.clone());
+    }
 
-    assert!(claim(index, &account, amount, merkle_proof.as_ref()));
-    assert!(is_claimed(index));
+    let token = Address::repeat_byte(1);
+    let merkle_root = all_layer.last().unwrap().last().unwrap();
+    let admin = Address::repeat_byte(3);
+    let mut mock = build_runtime();
+    mock.witness(&[admin]);
+    assert!(init(&token, merkle_root, &admin));
+    assert!(!init(&token, &merkle_root, &admin));
+
+    assert_eq!(&get_token_address(), &token);
+    assert_eq!(&get_merkle_root(), merkle_root);
+
+    let user = users.get(0).unwrap();
+    let mut merkle_proof: Vec<H256> = vec![];
+    merkle_proof.push(all_layer.get(0).unwrap().get(1).unwrap().clone());
+    merkle_proof.push(all_layer.get(1).unwrap().get(1).unwrap().clone());
+    merkle_proof.push(all_layer.get(2).unwrap().get(1).unwrap().clone());
+    assert!(claim(
+        user.index,
+        &user.account,
+        user.amount,
+        merkle_proof.as_ref()
+    ));
+    assert!(is_claimed(user.index));
+}
+
+fn get_layer_num(num: u32) -> u32 {
+    let r = (1..100)
+        .into_iter()
+        .find(|&i| 2u32.pow(i - 1) < num && num <= 2u32.pow(i));
+    r.unwrap_or_default() + 1
+}
+
+fn compute_proof(proof1: &[H256]) -> Vec<H256> {
+    let mut left = H256::new([0; 32]);
+    let mut right = H256::new([0; 32]);
+    let mut i = 0;
+    let mut proof2: Vec<H256> = vec![];
+    for proof in proof1.iter() {
+        if i % 2 == 0 {
+            left = proof.clone();
+            i += 1;
+        } else {
+            i += 1;
+            right = proof.clone();
+            proof2.push(if &left < &right {
+                sha256(concat(&left, &right))
+            } else {
+                sha256(concat(&right, &left))
+            });
+        }
+    }
+    proof2
 }
 
 struct TestS {
