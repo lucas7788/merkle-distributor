@@ -129,6 +129,7 @@ fn invoke() {
             sink.write(claim(index, account, amount, merkle_proof.as_slice()));
         }
         b"contractDelete" => {
+            assert!(check_witness(&get_admin()));
             contract_delete();
         }
         _ => {
